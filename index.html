@@ -537,7 +537,7 @@ function setTab(t){
   ['p','i','d'].forEach(x=>document.getElementById('tab-'+x).classList.toggle('on',m[x]===t));
   renderTable();
 }
-function fmtDL(iso){const d=new Date(iso);return{date:d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}),time:d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}}
+function fmtDL(iso){const d=new Date(iso);return{date:d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}),time:d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})};}
 function fmtCt(iso){
   const ms=new Date(iso)-new Date();
   if(ms<0)return{text:'OVERDUE',cls:'ct-hot'};
@@ -586,9 +586,9 @@ function renderTable(){
     return '<tr><td>'+(i+1)+'</td><td><span class="gch '+meta.chip+'">'+t.group+'</span></td><td><span class="paxn">'+t.name+'</span></td><td><span class="pnrc">'+t.pnr+'</span></td><td><div class="dld">'+dl.date+'</div><div class="dlt">'+dl.time+'</div></td><td>'+ctCell+'</td><td><span class="costc">'+cost+'</span></td><td>'+acts+'</td></tr>';
   }).join('');
 }
-function issueT(id){const t=tickets.find(x=>x.id===id);if(t){t.status='issued';t.issuedAt=new Date().toISOString();fbSave();showToast('✅ '+t.pnr+' Issued');refresh()}}
-function deleteT(id){const t=tickets.find(x=>x.id===id);if(t){t.status='deleted';t.deletedAt=new Date().toISOString();fbSave();showToast('🗑 '+t.pnr+' Deleted');refresh()}}
-function restoreT(id){const t=tickets.find(x=>x.id===id);if(t){t.status='pending';fbSave();showToast('↩ '+t.pnr+' Restored');refresh()}}
+function issueT(id){const t=tickets.find(x=>x.id===id);if(t){t.status='issued';t.issuedAt=new Date().toISOString();fbSave();showToast('✅ '+t.pnr+' Issued');refresh();}}
+function deleteT(id){const t=tickets.find(x=>x.id===id);if(t){t.status='deleted';t.deletedAt=new Date().toISOString();fbSave();showToast('🗑 '+t.pnr+' Deleted');refresh();}}
+function restoreT(id){const t=tickets.find(x=>x.id===id);if(t){t.status='pending';fbSave();showToast('↩ '+t.pnr+' Restored');refresh();}}
 function refresh(){renderDash();if(curG!=='home')renderTable()}
 function openAdd(){
   selG=curG!=='home'?curG:null;
@@ -652,7 +652,7 @@ document.getElementById('addOv').addEventListener('click',function(e){if(e.targe
 function showToast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('on');setTimeout(()=>el.classList.remove('on'),3000)}
 setInterval(()=>{
   const now=new Date();
-  tickets.forEach(t=>{if(t.status!=='pending'||t.alerted)return;const m=(new Date(t.deadline)-now)/60000;if(m<=60&&m>0){t.alerted=true;fbSave();showToast('🚨 '+t.pnr+' — '+Math.round(m)+'min to deadline!')}});
+  tickets.forEach(t=>{if(t.status!=='pending'||t.alerted)return;const m=(new Date(t.deadline)-now)/60000;if(m<=60&&m>0){t.alerted=true;fbSave();showToast('🚨 '+t.pnr+' — '+Math.round(m)+'min to deadline!');}});
   refresh();
 },30000);
 renderDash();
