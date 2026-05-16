@@ -1325,7 +1325,7 @@ function fbRemove(id){
   _db.ref('tickets/'+id).remove().catch(function(e){console.error('fbRemove error:',e);});
 }
 
-fbInit();
+window.addEventListener('load', function(){ fbInit(); });
 </script>
 
 <!-- Fixed totals bar — always at viewport bottom -->
