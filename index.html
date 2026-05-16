@@ -6,8 +6,8 @@
 <title>Sky Pass Travels — PNR Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <!-- Firebase SDK loaded first in head -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
@@ -1255,74 +1255,70 @@ renderDash();
 
 <script>
 // ── Firebase ──────────────────────────────────────────────
-var _db=null;
+var _db = null;
 
-function setDbStatus(state,msg){
-  var el=document.getElementById('dbStatusDot');
-  var tx=document.getElementById('dbStatusTxt');
-  if(!el||!tx) return;
-  el.style.background=state==='ok'?'#16a34a':state==='err'?'#dc2626':'#d97706';
-  tx.textContent=msg;
+var SKYPASS_CFG = {
+  apiKey:      "AIzaSyCYUQg6w-BsoXGHjtnt9XpKtqmTaJSWA0w",
+  authDomain:  "skypass-ebbc0.firebaseapp.com",
+  databaseURL: "https://skypass-ebbc0-default-rtdb.firebaseio.com",
+  projectId:   "skypass-ebbc0",
+  appId:       "1:246816929635:web:cdc8bbeaceea1922da8556"
+};
+
+function setDbStatus(state, msg){
+  var el = document.getElementById('dbStatusDot');
+  var tx = document.getElementById('dbStatusTxt');
+  if(!el || !tx) return;
+  el.style.background = state==='ok' ? '#16a34a' : state==='err' ? '#dc2626' : '#d97706';
+  tx.textContent = msg;
 }
 
 function fbInit(){
-  setDbStatus('wait','Connecting…');
   try{
-    var cfg={
-      apiKey:       "AIzaSyCYUQg6w-BsoXGHjtnt9XpKtqmTaJSWA0w",
-      authDomain:   "skypass-ebbc0.firebaseapp.com",
-      databaseURL:  "https://skypass-ebbc0-default-rtdb.firebaseio.com",
-      projectId:    "skypass-ebbc0",
-      appId:        "1:246816929635:web:cdc8bbeaceea1922da8556"
-    };
     var app;
-    try{ app=firebase.app(); }
-    catch(e){ app=firebase.initializeApp(cfg); }
-    _db=firebase.database(app);
+    try{ app = firebase.app(); }
+    catch(e){ app = firebase.initializeApp(SKYPASS_CFG); }
+    _db = firebase.database(app);
 
-    _db.ref('.info/connected').on('value',function(snap){
-      if(snap.val()===true){
-        setDbStatus('ok','Firebase Connected ✓');
-      } else {
-        setDbStatus('wait','Reconnecting…');
-      }
-    });
-
-    _db.ref('tickets').on('value',function(snap){
-      tickets=snap.val()?Object.values(snap.val()):[];
+    _db.ref('tickets').on('value', function(snap){
+      var val = snap.val();
+      tickets = (val && typeof val === 'object') ? Object.values(val) : [];
+      setDbStatus('ok', 'Connected ✓');
       refresh();
-    },function(err){
-      console.error('Firebase read error:',err.code, err.message);
-      setDbStatus('err','DB Error: '+(err.code||err.message));
-      toast('DB error: '+(err.message||err));
+    }, function(err){
+      setDbStatus('err', 'Error: ' + (err.code || err.message));
+      toast('DB error: ' + err.message);
     });
-    console.log('Firebase init OK');
+
+    _db.ref('.info/connected').on('value', function(snap){
+      if(!snap.val()) setDbStatus('wait', 'Connecting…');
+    });
+
   }catch(e){
-    console.error('Firebase init failed:',e);
-    setDbStatus('err','Init Failed');
-    toast('Firebase init failed: '+e.message);
+    setDbStatus('err', 'Init Failed');
+    toast('Firebase error: ' + e.message);
   }
 }
 
-function fbSave(){
-  if(!_db) return;
-  var o={}; tickets.forEach(function(x){o[x.id]=x;});
-  _db.ref('tickets').set(o).catch(function(e){console.error('fbSave error:',e);toast('Save error: '+e.message);});
-}
-
 function fbAdd(t){
-  if(!_db) return;
-  _db.ref('tickets/'+t.id).set(t).catch(function(e){console.error('fbAdd error:',e);toast('Save error: '+e.message);});
+  if(!_db){ tickets.push(t); refresh(); return; }
+  _db.ref('tickets/' + t.id).set(t).catch(function(e){ toast('Save error: ' + e.message); });
 }
 
-function fbPatch(id,updates){
+function fbPatch(id, updates){
   if(!_db) return;
-  _db.ref('tickets/'+id).update(updates).catch(function(e){console.error('fbPatch error:',e);toast('Update error: '+e.message);});
+  _db.ref('tickets/' + id).update(updates).catch(function(e){ toast('Update error: ' + e.message); });
 }
 
 function fbRemove(id){
   if(!_db) return;
-  _db.ref('tickets/'+id).remove().catch(function(e){console.error('fbRemove error:',e);});
+  _db.ref('tickets/' + id).remove().catch(function(e){ console.error('Remove error:', e); });
+}
+
+function fbSave(){
+  if(!_db) return;
+  var o = {}; tickets.forEach(function(x){ o[x.id] = x; });
+  _db.ref('tickets').set(o).catch(function(e){ toast('Save error: ' + e.message); });
 }
 
 window.addEventListener('load', function(){ fbInit(); });
