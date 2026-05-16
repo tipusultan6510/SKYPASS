@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sky Pass Travels — PNR Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Firebase SDK loaded first in head -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
@@ -960,20 +963,34 @@ function mkRow(t,i){
 function issueT(id){
   var t=tickets.find(function(x){return x.id===id;}); if(!t) return;
   if(!confirm('Issue ticket for '+t.name+' ('+t.pnr+')?')) return;
-  t.status='issued'; t.issuedAt=new Date().toISOString();
-  fbSave(); toast('Issued: '+t.pnr); setTab('issued'); renderDash();
+  var now=new Date().toISOString();
+  t.status='issued'; t.issuedAt=now;
+  fbPatch(id,{status:'issued',issuedAt:now});
+  toast('Issued: '+t.pnr); setTab('issued'); renderDash(); renderTable();
 }
 function delT(id){
   var t=tickets.find(function(x){return x.id===id;}); if(!t) return;
   if(!confirm('Delete PNR '+t.pnr+' for '+t.name+'?')) return;
-  t.status='deleted'; t.deletedAt=new Date().toISOString();
-  fbSave(); toast('Deleted: '+t.pnr); setTab('deleted'); renderDash();
+  var now=new Date().toISOString();
+  t.status='deleted'; t.deletedAt=now;
+  fbPatch(id,{status:'deleted',deletedAt:now});
+  toast('Deleted: '+t.pnr); setTab('deleted'); renderDash(); renderTable();
 }
-function restoreT(id){var t=tickets.find(function(x){return x.id===id;});if(t){t.status='active';fbSave();toast('Restored: '+t.pnr);setTab('active');renderDash();}}
+function restoreT(id){
+  var t=tickets.find(function(x){return x.id===id;}); if(!t) return;
+  t.status='active';
+  fbPatch(id,{status:'active'});
+  toast('Restored: '+t.pnr); setTab('active'); renderDash(); renderTable();
+}
 function permDel(id){
   if(!confirm('Permanently delete? Cannot be undone.')) return;
   var idx=tickets.findIndex(function(x){return x.id===id;});
-  if(idx>=0){var pnr=tickets[idx].pnr;tickets.splice(idx,1);fbSave();toast('Deleted: '+pnr);renderTable();renderDash();}
+  if(idx>=0){
+    var pnr=tickets[idx].pnr;
+    tickets.splice(idx,1);
+    fbRemove(id);
+    toast('Deleted: '+pnr); renderTable(); renderDash();
+  }
 }
 function refresh(){renderDash();if(curGrp!=='home')renderTable();}
 
@@ -1000,8 +1017,22 @@ function submitAdd(){
   if(!name)   return toast('Enter passenger name');
   if(!pnr)    return toast('Enter PNR code');
   if(!date||!time) return toast('Set deadline date & time');
-  var newT={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),group:selGrp,name:name,pnr:pnr,cost:cost,deadline:new Date(date+'T'+time).toISOString(),status:'active',createdAt:new Date().toISOString(),alerted:false};
-  tickets.push(newT); fbAdd(newT); closeAdd(); toast('Added: '+name+' / '+pnr);
+  var newT={
+    id: Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    group:selGrp, name:name, pnr:pnr, cost:cost,
+    deadline: new Date(date+'T'+time).toISOString(),
+    status:'active', createdAt:new Date().toISOString(), alerted:false
+  };
+  if(_db){
+    // Firebase connected — save directly, listener will update tickets array
+    fbAdd(newT);
+  } else {
+    // Offline fallback — save locally
+    tickets.push(newT);
+    refresh();
+  }
+  closeAdd();
+  toast('Added: '+name+' / '+pnr);
   if(selGrp&&curGrp!=='home'){curGrp=selGrp;setTab('active');}else if(selGrp) go(selGrp);
   renderDash();
 }
@@ -1029,7 +1060,8 @@ function saveEdit(){
   if(!name) return toast('Enter name'); if(!pnr) return toast('Enter PNR'); if(!date||!time) return toast('Set deadline');
   var t=tickets.find(function(x){return x.id===id;}); if(!t) return;
   t.name=name;t.pnr=pnr;t.cost=cost;t.deadline=new Date(date+'T'+time).toISOString();
-  fbSave();closeEdit();toast('Updated: '+pnr);refresh();
+  fbPatch(id,{name:name,pnr:pnr,cost:cost,deadline:t.deadline});
+  closeEdit();toast('Updated: '+pnr);refresh();
 }
 
 // bulk
@@ -1042,8 +1074,24 @@ function updBulk(){
 }
 function clrSel(){document.querySelectorAll('.rchk').forEach(function(c){c.checked=false;});var s=document.getElementById('selAll');if(s)s.checked=false;updBulk();}
 function getIds(){return Array.from(document.querySelectorAll('.rchk:checked')).map(function(c){return c.value;});}
-function bulkDel(){var ids=getIds();if(!ids.length) return toast('Select PNRs first');ids.forEach(function(id){var t=tickets.find(function(x){return x.id===id;});if(t)t.status='deleted';});fbSave();clrSel();toast(ids.length+' deleted');setTab('deleted');renderDash();}
-function bulkPerm(){var ids=getIds();if(!ids.length) return toast('Select PNRs first');if(!confirm('Permanently delete '+ids.length+'?')) return;ids.forEach(function(id){var idx=tickets.findIndex(function(x){return x.id===id;});if(idx>=0)tickets.splice(idx,1);});fbSave();clrSel();toast(ids.length+' permanently deleted');renderTable();renderDash();}
+function bulkDel(){
+  var ids=getIds(); if(!ids.length) return toast('Select PNRs first');
+  var now=new Date().toISOString();
+  ids.forEach(function(id){
+    var t=tickets.find(function(x){return x.id===id;});
+    if(t){t.status='deleted';t.deletedAt=now;fbPatch(id,{status:'deleted',deletedAt:now});}
+  });
+  clrSel();toast(ids.length+' deleted');setTab('deleted');renderDash();
+}
+function bulkPerm(){
+  var ids=getIds(); if(!ids.length) return toast('Select PNRs first');
+  if(!confirm('Permanently delete '+ids.length+'?')) return;
+  ids.forEach(function(id){
+    var idx=tickets.findIndex(function(x){return x.id===id;});
+    if(idx>=0){tickets.splice(idx,1);fbRemove(id);}
+  });
+  clrSel();toast(ids.length+' permanently deleted');renderTable();renderDash();
+}
 
 // note card
 function openNote(id){
@@ -1194,7 +1242,7 @@ setInterval(function(){
   tickets.forEach(function(t){
     if(t.status!=='active'||t.alerted) return;
     var m=(new Date(t.deadline)-now)/60000;
-    if(m<=60&&m>0){t.alerted=true;fbSave();toast('⚠ '+t.pnr+' — '+Math.round(m)+'min to deadline!');}
+    if(m<=60&&m>0){t.alerted=true;fbPatch(t.id,{alerted:true});toast('⚠ '+t.pnr+' — '+Math.round(m)+'min to deadline!');}
   });
   refresh();
 },30000);
@@ -1209,26 +1257,58 @@ navToggle(false);
 renderDash();
 </script>
 
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script>
-window._fbR=false;
-try{
-  firebase.initializeApp({
-    apiKey:"AIzaSyCYUQg6w-BsoXGHjtnt9XpKtqmTaJSWA0w",
-    authDomain:"skypass-ebbc0.firebaseapp.com",
-    databaseURL:"https://skypass-ebbc0-default-rtdb.firebaseio.com",
-    projectId:"skypass-ebbc0",
-    appId:"1:246816929635:web:cdc8bbeaceea1922da8556"
-  });
-  window._fbR=true;
-  firebase.database().ref('tickets').on('value',function(snap){
-    tickets=snap.val()?Object.values(snap.val()):[];
-    refresh();
-  });
-}catch(e){console.warn('Firebase:',e);}
-</script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+// ── Firebase ──────────────────────────────────────────────
+var _db=null;
+
+function fbInit(){
+  try{
+    if(firebase.apps.length===0){
+      firebase.initializeApp({
+        apiKey:       "AIzaSyCYUQg6w-BsoXGHjtnt9XpKtqmTaJSWA0w",
+        authDomain:   "skypass-ebbc0.firebaseapp.com",
+        databaseURL:  "https://skypass-ebbc0-default-rtdb.firebaseio.com",
+        projectId:    "skypass-ebbc0",
+        appId:        "1:246816929635:web:cdc8bbeaceea1922da8556"
+      });
+    }
+    _db=firebase.database();
+    _db.ref('tickets').on('value',function(snap){
+      tickets=snap.val()?Object.values(snap.val()):[];
+      refresh();
+    },function(err){
+      console.error('Firebase read error:',err);
+      toast('Database read error — check console');
+    });
+    console.log('Firebase connected ✓');
+  }catch(e){
+    console.error('Firebase init failed:',e);
+    toast('Firebase not connected — local mode only');
+  }
+}
+
+function fbSave(){
+  if(!_db) return;
+  var o={}; tickets.forEach(function(x){o[x.id]=x;});
+  _db.ref('tickets').set(o).catch(function(e){console.error('fbSave error:',e);toast('Save error: '+e.message);});
+}
+
+function fbAdd(t){
+  if(!_db) return;
+  _db.ref('tickets/'+t.id).set(t).catch(function(e){console.error('fbAdd error:',e);toast('Save error: '+e.message);});
+}
+
+function fbPatch(id,updates){
+  if(!_db) return;
+  _db.ref('tickets/'+id).update(updates).catch(function(e){console.error('fbPatch error:',e);});
+}
+
+function fbRemove(id){
+  if(!_db) return;
+  _db.ref('tickets/'+id).remove().catch(function(e){console.error('fbRemove error:',e);});
+}
+
+fbInit();
 
 <!-- Fixed totals bar — always at viewport bottom -->
 <div class="tfoot-bar" id="tfootBar" style="display:none">
