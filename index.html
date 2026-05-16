@@ -104,7 +104,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#eef2f7;color:var(--ink
 .nav-foot{padding:12px 14px;border-top:1px solid var(--ink6);flex-shrink:0}
 .nav-clock{font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:500;color:var(--ink);letter-spacing:.02em;transition:opacity .15s}
 .nav-date{font-size:11px;color:var(--ink4);margin-top:2px;transition:opacity .15s}
-.nav.slim .nav-clock,.nav.slim .nav-date{opacity:0}
+.nav.slim .nav-clock,.nav.slim .nav-date,.nav.slim .db-status-wrap{opacity:0}
 
 /* ── main ── */
 .main{margin-left:var(--nav-w);flex:1;min-width:0;transition:margin-left .2s ease;display:flex;flex-direction:column}
@@ -464,6 +464,10 @@ input[type="time"]{-webkit-appearance:textfield}
   <div class="nav-foot">
     <div class="nav-clock" id="clk">00:00:00</div>
     <div class="nav-date"  id="clkdate"></div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:8px;transition:opacity .15s" class="db-status-wrap">
+      <div id="dbStatusDot" style="width:8px;height:8px;border-radius:50%;background:#d97706;flex-shrink:0"></div>
+      <div id="dbStatusTxt" style="font-size:10px;color:var(--ink4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Connecting…</div>
+    </div>
   </div>
 </aside>
 
@@ -1253,29 +1257,50 @@ renderDash();
 // ── Firebase ──────────────────────────────────────────────
 var _db=null;
 
+function setDbStatus(state,msg){
+  var el=document.getElementById('dbStatusDot');
+  var tx=document.getElementById('dbStatusTxt');
+  if(!el||!tx) return;
+  el.style.background=state==='ok'?'#16a34a':state==='err'?'#dc2626':'#d97706';
+  tx.textContent=msg;
+}
+
 function fbInit(){
+  setDbStatus('wait','Connecting…');
   try{
-    if(firebase.apps.length===0){
-      firebase.initializeApp({
-        apiKey:       "AIzaSyCYUQg6w-BsoXGHjtnt9XpKtqmTaJSWA0w",
-        authDomain:   "skypass-ebbc0.firebaseapp.com",
-        databaseURL:  "https://skypass-ebbc0-default-rtdb.firebaseio.com",
-        projectId:    "skypass-ebbc0",
-        appId:        "1:246816929635:web:cdc8bbeaceea1922da8556"
-      });
-    }
-    _db=firebase.database();
+    var cfg={
+      apiKey:       "AIzaSyCYUQg6w-BsoXGHjtnt9XpKtqmTaJSWA0w",
+      authDomain:   "skypass-ebbc0.firebaseapp.com",
+      databaseURL:  "https://skypass-ebbc0-default-rtdb.firebaseio.com",
+      projectId:    "skypass-ebbc0",
+      appId:        "1:246816929635:web:cdc8bbeaceea1922da8556"
+    };
+    var app;
+    try{ app=firebase.app(); }
+    catch(e){ app=firebase.initializeApp(cfg); }
+    _db=firebase.database(app);
+
+    _db.ref('.info/connected').on('value',function(snap){
+      if(snap.val()===true){
+        setDbStatus('ok','Firebase Connected ✓');
+      } else {
+        setDbStatus('wait','Reconnecting…');
+      }
+    });
+
     _db.ref('tickets').on('value',function(snap){
       tickets=snap.val()?Object.values(snap.val()):[];
       refresh();
     },function(err){
-      console.error('Firebase read error:',err);
-      toast('Database read error — check console');
+      console.error('Firebase read error:',err.code, err.message);
+      setDbStatus('err','DB Error: '+(err.code||err.message));
+      toast('DB error: '+(err.message||err));
     });
-    console.log('Firebase connected ✓');
+    console.log('Firebase init OK');
   }catch(e){
     console.error('Firebase init failed:',e);
-    toast('Firebase not connected — local mode only');
+    setDbStatus('err','Init Failed');
+    toast('Firebase init failed: '+e.message);
   }
 }
 
@@ -1292,7 +1317,7 @@ function fbAdd(t){
 
 function fbPatch(id,updates){
   if(!_db) return;
-  _db.ref('tickets/'+id).update(updates).catch(function(e){console.error('fbPatch error:',e);});
+  _db.ref('tickets/'+id).update(updates).catch(function(e){console.error('fbPatch error:',e);toast('Update error: '+e.message);});
 }
 
 function fbRemove(id){
