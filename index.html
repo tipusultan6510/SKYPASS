@@ -690,13 +690,11 @@ var GM={
   NDC:{name:'NDC',                       short:'NDC',      chip:'cnd',badgeCls:'gb-nd',gp:'sel-nd',color:'#16a34a',bg:'rgba(22,163,74,.07)'}
 };
 
-// firebase
-function fbSave(){
-  if(!window._fbR) return;
-  var o={}; tickets.forEach(function(x){o[x.id]=x;});
-  firebase.database().ref('tickets').set(o);
-}
-function fbAdd(t){if(!window._fbR) return; firebase.database().ref('tickets/'+t.id).set(t);}
+// firebase helpers defined below after SDK init
+function fbSave(){}
+function fbAdd(t){}
+function fbPatch(id,u){}
+function fbRemove(id){}
 
 // clock
 function p(n){return n.toString().padStart(2,'0')}
@@ -1259,7 +1257,6 @@ renderDash();
 
 <script>
 // ── Firebase ──────────────────────────────────────────────
-var _db=null;
 
 function fbInit(){
   try{
@@ -1272,43 +1269,42 @@ function fbInit(){
         appId:        "1:246816929635:web:cdc8bbeaceea1922da8556"
       });
     }
-    _db=firebase.database();
-    _db.ref('tickets').on('value',function(snap){
+    var db=firebase.database();
+
+    // override stubs with real implementations
+    fbSave=function(){
+      var o={}; tickets.forEach(function(x){o[x.id]=x;});
+      db.ref('tickets').set(o).catch(function(e){console.error('fbSave:',e);toast('Save error');});
+    };
+    fbAdd=function(t){
+      db.ref('tickets/'+t.id).set(t).catch(function(e){console.error('fbAdd:',e);toast('Add error');});
+    };
+    fbPatch=function(id,u){
+      db.ref('tickets/'+id).update(u).catch(function(e){console.error('fbPatch:',e);});
+    };
+    fbRemove=function(id){
+      db.ref('tickets/'+id).remove().catch(function(e){console.error('fbRemove:',e);});
+    };
+
+    // real-time listener — any change from any device updates the UI instantly
+    db.ref('tickets').on('value',function(snap){
       tickets=snap.val()?Object.values(snap.val()):[];
       refresh();
     },function(err){
-      console.error('Firebase read error:',err);
-      toast('Database read error — check console');
+      console.error('Firebase read error:',err.code, err.message);
+      toast('DB error: '+err.message);
     });
-    console.log('Firebase connected ✓');
+
+    console.log('%cFirebase connected ✓','color:green;font-weight:bold');
+
   }catch(e){
     console.error('Firebase init failed:',e);
-    toast('Firebase not connected — local mode only');
+    toast('Firebase offline — local mode');
   }
 }
 
-function fbSave(){
-  if(!_db) return;
-  var o={}; tickets.forEach(function(x){o[x.id]=x;});
-  _db.ref('tickets').set(o).catch(function(e){console.error('fbSave error:',e);toast('Save error: '+e.message);});
-}
-
-function fbAdd(t){
-  if(!_db) return;
-  _db.ref('tickets/'+t.id).set(t).catch(function(e){console.error('fbAdd error:',e);toast('Save error: '+e.message);});
-}
-
-function fbPatch(id,updates){
-  if(!_db) return;
-  _db.ref('tickets/'+id).update(updates).catch(function(e){console.error('fbPatch error:',e);});
-}
-
-function fbRemove(id){
-  if(!_db) return;
-  _db.ref('tickets/'+id).remove().catch(function(e){console.error('fbRemove error:',e);});
-}
-
 fbInit();
+</script>
 
 <!-- Fixed totals bar — always at viewport bottom -->
 <div class="tfoot-bar" id="tfootBar" style="display:none">
