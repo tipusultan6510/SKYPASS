@@ -690,12 +690,6 @@ var GM={
   NDC:{name:'NDC',                       short:'NDC',      chip:'cnd',badgeCls:'gb-nd',gp:'sel-nd',color:'#16a34a',bg:'rgba(22,163,74,.07)'}
 };
 
-// firebase helpers defined below after SDK init
-function fbSave(){}
-function fbAdd(t){}
-function fbPatch(id,u){}
-function fbRemove(id){}
-
 // clock
 function p(n){return n.toString().padStart(2,'0')}
 function tick(){
@@ -1022,7 +1016,8 @@ function submitAdd(){
     status:'active', createdAt:new Date().toISOString(), alerted:false
   };
   if(_db){
-    // Firebase connected — save directly, listener will update tickets array
+    // Firebase connected — save directly, listener will sync
+    tickets.push(newT);
     fbAdd(newT);
   } else {
     // Offline fallback — save locally
@@ -1144,9 +1139,8 @@ function closeNote(){document.getElementById('noteOv').classList.remove('on');}
 // all notes panel
 function openPanel(){
   var pool=tickets.filter(function(t){return t.group===curGrp&&t.status===curTab;}).sort(function(a,b){
-    var da=(t=>{return t.status==='issued'&&t.issuedAt?new Date(t.issuedAt):t.status==='deleted'&&t.deletedAt?new Date(t.deletedAt):new Date(t.deadline);})(a);
-    var db=(t=>{return t.status==='issued'&&t.issuedAt?new Date(t.issuedAt):t.status==='deleted'&&t.deletedAt?new Date(t.deletedAt):new Date(t.deadline);})(b);
-    return da-db;
+    var getDate=function(tk){return tk.status==='issued'&&tk.issuedAt?new Date(tk.issuedAt):tk.status==='deleted'&&tk.deletedAt?new Date(tk.deletedAt):new Date(tk.deadline);};
+    return getDate(a)-getDate(b);
   });
   var sM={active:'Pending',issued:'Issued',deleted:'Deleted'};
   document.getElementById('phdTitle').textContent=curGrp+' — '+(GM[curGrp]?GM[curGrp].name:'');
@@ -1257,6 +1251,7 @@ renderDash();
 
 <script>
 // ── Firebase ──────────────────────────────────────────────
+var _db=null;
 
 function fbInit(){
   try{
@@ -1269,38 +1264,40 @@ function fbInit(){
         appId:        "1:246816929635:web:cdc8bbeaceea1922da8556"
       });
     }
-    var db=firebase.database();
-
-    // override stubs with real implementations
-    fbSave=function(){
-      var o={}; tickets.forEach(function(x){o[x.id]=x;});
-      db.ref('tickets').set(o).catch(function(e){console.error('fbSave:',e);toast('Save error');});
-    };
-    fbAdd=function(t){
-      db.ref('tickets/'+t.id).set(t).catch(function(e){console.error('fbAdd:',e);toast('Add error');});
-    };
-    fbPatch=function(id,u){
-      db.ref('tickets/'+id).update(u).catch(function(e){console.error('fbPatch:',e);});
-    };
-    fbRemove=function(id){
-      db.ref('tickets/'+id).remove().catch(function(e){console.error('fbRemove:',e);});
-    };
-
-    // real-time listener — any change from any device updates the UI instantly
-    db.ref('tickets').on('value',function(snap){
+    _db=firebase.database();
+    _db.ref('tickets').on('value',function(snap){
       tickets=snap.val()?Object.values(snap.val()):[];
       refresh();
     },function(err){
-      console.error('Firebase read error:',err.code, err.message);
-      toast('DB error: '+err.message);
+      console.error('Firebase read error:',err);
+      toast('Database read error — check console');
     });
-
-    console.log('%cFirebase connected ✓','color:green;font-weight:bold');
-
+    console.log('Firebase connected ✓');
   }catch(e){
     console.error('Firebase init failed:',e);
-    toast('Firebase offline — local mode');
+    toast('Firebase not connected — local mode only');
   }
+}
+
+function fbSave(){
+  if(!_db) return;
+  var o={}; tickets.forEach(function(x){o[x.id]=x;});
+  _db.ref('tickets').set(o).catch(function(e){console.error('fbSave error:',e);toast('Save error: '+e.message);});
+}
+
+function fbAdd(t){
+  if(!_db) return;
+  _db.ref('tickets/'+t.id).set(t).catch(function(e){console.error('fbAdd error:',e);toast('Save error: '+e.message);});
+}
+
+function fbPatch(id,updates){
+  if(!_db) return;
+  _db.ref('tickets/'+id).update(updates).catch(function(e){console.error('fbPatch error:',e);});
+}
+
+function fbRemove(id){
+  if(!_db) return;
+  _db.ref('tickets/'+id).remove().catch(function(e){console.error('fbRemove error:',e);});
 }
 
 fbInit();
